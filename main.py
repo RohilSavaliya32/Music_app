@@ -15,28 +15,37 @@ def search(q: str):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             results = ydl.extract_info(f"ytsearch5:{q}", download=False)
 
-            videos = []
-            for entry in results.get("entries", []):
-                videos.append({
-                    "title": entry.get("title"),
-                    "video_id": entry.get("id")
-                })
+        videos = [
+            {
+                "title": entry.get("title"),
+                "video_id": entry.get("id")
+            }
+            for entry in results.get("entries", [])
+        ]
 
-            return videos
+        return videos
 
     except Exception as e:
         return {"error": str(e)}
 
 
-# 🎧 AUDIO API (FINAL WORKING)
+# 🎧 AUDIO API (FINAL FIXED)
 @app.get("/audio")
 def get_audio(video_id: str):
     url = f"https://youtu.be/{video_id}"
 
+    # ✅ CORRECT INDENT
     ydl_opts = {
         "quiet": True,
         "noplaylist": True,
-        "cookiefile": "cookies.txt"
+        "cookiefile": "cookies.txt",
+        "nocheckcertificate": True,
+        "geo_bypass": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android"]
+            }
+        }
     }
 
     try:
@@ -47,13 +56,13 @@ def get_audio(video_id: str):
 
         audio_url = None
 
-        # ✅ Best audio-only stream find
+        # ✅ Best audio-only stream
         for f in formats:
             if f.get("acodec") != "none" and f.get("vcodec") == "none":
                 audio_url = f.get("url")
                 break
 
-        # 🔁 fallback (agar audio-only nahi mila)
+        # 🔁 fallback
         if not audio_url:
             for f in formats:
                 if f.get("url"):
