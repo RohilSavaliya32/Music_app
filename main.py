@@ -1,7 +1,20 @@
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import yt_dlp
+import requests
+from io import BytesIO
 
 app = FastAPI()
+
+# ✅ Enable CORS for Flutter app
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # 🔍 SEARCH API
 @app.get("/search")
@@ -29,63 +42,83 @@ def search(q: str):
         return {"error": str(e)}
 
 
-# 🎧 AUDIO API (FINAL FIXED)
+# 🎧 AUDIO API - Stream directly
 @app.get("/audio")
 def get_audio(video_id: str):
-    url = f"https://youtu.be/{video_id}"
+    url = f"https://www.youtube.com/watch?v={video_id}"
 
-    # ✅ CORRECT INDENT
     ydl_opts = {
-        "quiet": False,
+        "quiet": True,
+        "no_warnings": True,
         "noplaylist": True,
         "cookiefile": "cookies.txt",
         "nocheckcertificate": True,
         "geo_bypass": True,
         "socket_timeout": 30,
+        "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best[acodec!=none]/best",
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "web", "tv", "mweb"]
+                "player_client": ["android", "web", "tv", "mweb", "ios"]
             }
-        },
-        "format": "bestaudio/best"
+        }
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
-        formats = info.get("formats", [])
-
-        audio_url = None
-
-        # ✅ Best audio-only stream
-        for f in formats:
-            if f.get("acodec") != "none" and f.get("vcodec") == "none":
-                audio_url = f.get("url")
-                break
-
-        # 🔁 Fallback: any format with both audio and video
+        # Get audio URL
+        audio_url = info.get("url")
+        
         if not audio_url:
+            formats = info.get("formats", [])
+            # Try to find best audio format
             for f in formats:
-                if f.get("acodec") != "none" and f.get("vcodec") != "none":
-                    audio_url = f.get("url")
-                    break
-
-        # 🔁 Last resort: any format with URL
-        if not audio_url:
-            for f in formats:
-                if f.get("url"):
+                if f.get("acodec") != "none" and f.get("url"):
                     audio_url = f.get("url")
                     break
 
         if not audio_url:
-            return {"error": "No playable audio found. Video may be restricted or unavailable."}
+            return JSONResponse(
+                {"error": "No audio format available for this video"},
+                status_code=404
+            )
 
-        return {
-            "title": info.get("title"),
-            "audio_url": audio_url,
-            "duration": info.get("duration")
-        }
+        # Stream audio from YouTube
+        try:
+            response = requests.get(
+                audio_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Referer": "https://www.youtube.com/"
+                },
+                stream=True,
+                timeout=30
+            )
+            response.raise_for_status()
+
+            return StreamingResponse(
+                response.iter_content(chunk_size=8192),
+                media_type="audio/mpeg",
+                headers={
+                    "Content-Disposition": f"inline; filename={info.get('title', 'audio')}.mp3",
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "no-cache"
+                }
+            )
+        except Exception as stream_error:
+            # Fallback: Return URL if streaming fails
+            return JSONResponse({
+                "title": info.get("title"),
+                "audio_url": audio_url,
+                "duration": info.get("duration"),
+                "note": "Use URL directly if streaming fails"
+            })
 
     except Exception as e:
-        return {"error": f"Failed to fetch audio: {str(e)}"}
+        error_msg = str(e)
+        # Return more specific error handling
+        return JSONResponse(
+            {"error": f"Failed to fetch audio: {error_msg}"},
+            status_code=500
+        )
