@@ -11,48 +11,44 @@ def search(q: str):
         "extract_flat": True
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        results = ydl.extract_info(f"ytsearch5:{q}", download=False)
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            results = ydl.extract_info(f"ytsearch5:{q}", download=False)
 
-        videos = []
-        for entry in results.get("entries", []):
-            videos.append({
-                "title": entry.get("title"),
-                "video_id": entry.get("id")
-            })
+            videos = []
+            for entry in results.get("entries", []):
+                videos.append({
+                    "title": entry.get("title"),
+                    "video_id": entry.get("id")
+                })
 
-        return videos
+            return videos
+
+    except Exception as e:
+        return {"error": str(e)}
 
 
-# 🎧 AUDIO API (FINAL FIXED)
+# 🎧 AUDIO API (FINAL WORKING)
 @app.get("/audio")
 def get_audio(video_id: str):
     url = f"https://youtu.be/{video_id}"
 
     ydl_opts = {
-        "format": "bestaudio/best",
+        "format": "bestaudio[ext=m4a]/bestaudio",
         "quiet": True,
-        "noplaylist": True
+        "noplaylist": True,
+        "cookiefile": "cookies.txt"   # 🔥 important
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
-            formats = info.get("formats")
-
-            if not formats:
-                return {"error": "No formats found"}
-
-            audio_url = None
-
-            for f in formats:
-                if f.get("acodec") != "none" and f.get("vcodec") == "none":
-                    audio_url = f.get("url")
-                    break
+            # ✅ direct playable URL
+            audio_url = info.get("url")
 
             if not audio_url:
-                return {"error": "Audio not found"}
+                return {"error": "Audio URL not found"}
 
             return {
                 "title": info.get("title"),
