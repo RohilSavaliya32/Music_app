@@ -34,26 +34,39 @@ def get_audio(video_id: str):
     url = f"https://youtu.be/{video_id}"
 
     ydl_opts = {
-        "format": "bestaudio/best",
         "quiet": True,
         "noplaylist": True,
-        "cookiefile": "cookies.txt"   # 🔥 important
+        "cookiefile": "cookies.txt"
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
-            # ✅ direct playable URL
-            audio_url = info.get("url")
+        formats = info.get("formats", [])
 
-            if not audio_url:
-                return {"error": "Audio URL not found"}
+        audio_url = None
 
-            return {
-                "title": info.get("title"),
-                "audio_url": audio_url
-            }
+        # ✅ Best audio-only stream find
+        for f in formats:
+            if f.get("acodec") != "none" and f.get("vcodec") == "none":
+                audio_url = f.get("url")
+                break
+
+        # 🔁 fallback (agar audio-only nahi mila)
+        if not audio_url:
+            for f in formats:
+                if f.get("url"):
+                    audio_url = f.get("url")
+                    break
+
+        if not audio_url:
+            return {"error": "No playable audio found"}
+
+        return {
+            "title": info.get("title"),
+            "audio_url": audio_url
+        }
 
     except Exception as e:
         return {"error": str(e)}
