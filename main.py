@@ -36,16 +36,18 @@ def get_audio(video_id: str):
 
     # ✅ CORRECT INDENT
     ydl_opts = {
-        "quiet": True,
+        "quiet": False,
         "noplaylist": True,
         "cookiefile": "cookies.txt",
         "nocheckcertificate": True,
         "geo_bypass": True,
+        "socket_timeout": 30,
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "web"]
+                "player_client": ["android", "web", "tv", "mweb"]
             }
-        }
+        },
+        "format": "bestaudio/best"
     }
 
     try:
@@ -62,7 +64,14 @@ def get_audio(video_id: str):
                 audio_url = f.get("url")
                 break
 
-        # 🔁 fallback
+        # 🔁 Fallback: any format with both audio and video
+        if not audio_url:
+            for f in formats:
+                if f.get("acodec") != "none" and f.get("vcodec") != "none":
+                    audio_url = f.get("url")
+                    break
+
+        # 🔁 Last resort: any format with URL
         if not audio_url:
             for f in formats:
                 if f.get("url"):
@@ -70,12 +79,13 @@ def get_audio(video_id: str):
                     break
 
         if not audio_url:
-            return {"error": "No playable audio found"}
+            return {"error": "No playable audio found. Video may be restricted or unavailable."}
 
         return {
             "title": info.get("title"),
-            "audio_url": audio_url
+            "audio_url": audio_url,
+            "duration": info.get("duration")
         }
 
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"Failed to fetch audio: {str(e)}"}
