@@ -15,7 +15,7 @@ def search(q: str):
         results = ydl.extract_info(f"ytsearch5:{q}", download=False)
 
         videos = []
-        for entry in results['entries']:
+        for entry in results.get("entries", []):
             videos.append({
                 "title": entry.get("title"),
                 "video_id": entry.get("id")
@@ -24,20 +24,40 @@ def search(q: str):
         return videos
 
 
-# 🎧 AUDIO API
+# 🎧 AUDIO API (FINAL FIXED)
 @app.get("/audio")
 def get_audio(video_id: str):
     url = f"https://youtu.be/{video_id}"
 
     ydl_opts = {
-        "format": "bestaudio",
-        "quiet": True
+        "format": "bestaudio/best",
+        "quiet": True,
+        "noplaylist": True
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
 
-        return {
-            "title": info.get("title"),
-            "audio_url": info.get("url")
-        }
+            formats = info.get("formats")
+
+            if not formats:
+                return {"error": "No formats found"}
+
+            audio_url = None
+
+            for f in formats:
+                if f.get("acodec") != "none" and f.get("vcodec") == "none":
+                    audio_url = f.get("url")
+                    break
+
+            if not audio_url:
+                return {"error": "Audio not found"}
+
+            return {
+                "title": info.get("title"),
+                "audio_url": audio_url
+            }
+
+    except Exception as e:
+        return {"error": str(e)}
