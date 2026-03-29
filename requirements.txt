@@ -1,7 +1,4 @@
 fastapi
-<<<<<<< HEAD
 uvicorn
 yt-dlp
-=======
-uvicorn
->>>>>>> 7c6400d37b33e418c76cc7c9414790dbdcedb0ce
+
