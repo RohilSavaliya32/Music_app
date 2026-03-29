@@ -43,7 +43,7 @@ def get_audio(video_id: str):
         "geo_bypass": True,
         "extractor_args": {
             "youtube": {
-                "player_client": ["android"]
+                "player_client": ["android", "web"]
             }
         }
     }
