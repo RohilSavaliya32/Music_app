@@ -34,7 +34,7 @@ def get_audio(video_id: str):
     url = f"https://youtu.be/{video_id}"
 
     ydl_opts = {
-        "format": "bestaudio[ext=m4a]/bestaudio",
+        "format": "bestaudio/best",
         "quiet": True,
         "noplaylist": True,
         "cookiefile": "cookies.txt"   # 🔥 important
