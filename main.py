@@ -1,12 +1,11 @@
 from fastapi import FastAPI
-from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import yt_dlp
-import requests
 
 app = FastAPI()
 
-# ✅ CORS
+# ✅ CORS (Flutter connect ke liye)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,12 +24,13 @@ def search(q: str):
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            results = ydl.extract_info(f"ytsearch5:{q}", download=False)
+            results = ydl.extract_info(f"ytsearch10:{q}", download=False)
 
         videos = [
             {
                 "title": entry.get("title"),
-                "video_id": entry.get("id")
+                "video_id": entry.get("id"),
+                "thumbnail": entry.get("thumbnails", [{}])[-1].get("url")
             }
             for entry in results.get("entries", [])
         ]
@@ -41,43 +41,42 @@ def search(q: str):
         return {"error": str(e)}
 
 
-# 🎧 AUDIO API
+# 🎧 AUDIO URL API (BEST METHOD)
 @app.get("/audio")
 def get_audio(video_id: str):
     url = f"https://www.youtube.com/watch?v={video_id}"
 
+    # 🔥 Strong yt-dlp config
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "nocheckcertificate": True,
         "geo_bypass": True,
-        "socket_timeout": 30,
 
-        # 🔥 FIXED CLIENT BYPASS
+        # ✅ BEST FORMAT
+        "format": "bestaudio/best",
+
+        # 🔥 YouTube bypass clients
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "ios", "web_embedded", "tv"]
+                "player_client": ["android", "ios", "web_embedded"]
             }
         },
 
-        # ✅ SIMPLE FORMAT (NO CRASH)
-        "format": "bestaudio/best",
-
-        # 🔥 STRONG HEADERS
+        # 🔥 Headers
         "http_headers": {
-            "User-Agent": "com.google.android.youtube/17.31.35 (Linux; Android 11)",
+            "User-Agent": "com.google.android.youtube/17.31.35"
         }
     }
 
     try:
-        # 🔍 Extract info
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
+        # 🎯 Direct audio URL
         audio_url = info.get("url")
 
-        # 🔥 FALLBACK (IMPORTANT)
+        # 🔥 fallback if missing
         if not audio_url:
             formats = info.get("formats", [])
 
@@ -86,53 +85,26 @@ def get_audio(video_id: str):
                 if f.get("acodec") != "none" and f.get("url")
             ]
 
-            # Sort by best quality
             audio_formats.sort(key=lambda x: x.get("abr", 0), reverse=True)
 
             if audio_formats:
                 audio_url = audio_formats[0]["url"]
 
-        # ❌ Still not found
         if not audio_url:
             return JSONResponse(
-                {"error": "No playable audio found"},
+                {"error": "No audio found"},
                 status_code=404
             )
 
-        # 🚀 STREAM TRY
-        try:
-            response = requests.get(
-                audio_url,
-                headers={
-                    "User-Agent": "Mozilla/5.0",
-                    "Referer": "https://www.youtube.com/"
-                },
-                stream=True,
-                timeout=20
-            )
-
-            response.raise_for_status()
-
-            return StreamingResponse(
-                response.iter_content(chunk_size=8192),
-                media_type="audio/mpeg",
-                headers={
-                    "Content-Disposition": f"inline; filename={info.get('title','audio')}.mp3",
-                    "Accept-Ranges": "bytes"
-                }
-            )
-
-        except Exception:
-            # 🔥 BEST FALLBACK → RETURN DIRECT URL
-            return {
-                "title": info.get("title"),
-                "audio_url": audio_url,
-                "duration": info.get("duration"),
-                "note": "Play this URL directly in frontend"
-            }
+        return {
+            "title": info.get("title"),
+            "audio_url": audio_url,
+            "duration": info.get("duration"),
+            "thumbnail": info.get("thumbnail")
+        }
 
     except Exception as e:
         return JSONResponse(
-            {"error": f"Failed to fetch audio: {str(e)}"},
+            {"error": str(e)},
             status_code=500
-        )
+        )   
