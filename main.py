@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 import yt_dlp
+import time
+import random
 
 app = FastAPI()
 
-# ✅ CORS
+# ✅ CORS (Flutter ke liye)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,123 +15,90 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🔥 SIMPLE CACHE (memory)
-audio_cache = {}
+# ✅ In-memory cache
+cache = {}
 
-# 🔍 SEARCH API
+# ✅ yt-dlp config
+def get_ydl_opts():
+    return {
+        "format": "bestaudio/best",
+        "quiet": True,
+        "noplaylist": True,
+        "cookiesfrombrowser": ("chrome", None),  # 🔥 auto cookies
+    }
+
+
+# 🏠 Home
+@app.get("/")
+def home():
+    return {"msg": "Music API Running 🚀"}
+
+
+# 🎵 Get Song
+@app.get("/song")
+def get_song(url: str):
+    
+    # ✅ Cache check
+    if url in cache:
+        return {
+            "source": "cache",
+            "data": cache[url]
+        }
+
+    # ⏱ Random delay (bot avoid)
+    time.sleep(random.uniform(1, 2))
+
+    # 🔁 Retry system
+    for attempt in range(3):
+        try:
+            with yt_dlp.YoutubeDL(get_ydl_opts()) as ydl:
+                info = ydl.extract_info(url, download=False)
+
+            result = {
+                "title": info.get("title"),
+                "duration": info.get("duration"),
+                "thumbnail": info.get("thumbnail"),
+                "audio_url": info.get("url"),
+            }
+
+            # ✅ Cache store
+            cache[url] = result
+
+            return {
+                "source": "yt-dlp",
+                "data": result
+            }
+
+        except Exception as e:
+            print(f"Retry {attempt+1} failed:", str(e))
+            time.sleep(2)
+
+    return {"error": "Failed to fetch audio 😢"}
+
+
+# 🔍 Search (optional)
 @app.get("/search")
 def search(q: str):
     ydl_opts = {
         "quiet": True,
-        "extract_flat": True
+        "extract_flat": True,
+        "skip_download": True,
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             results = ydl.extract_info(f"ytsearch10:{q}", download=False)
 
-        # ✅ FILTER ONLY VALID VIDEOS
-        videos = [
-            {
+        videos = []
+        for entry in results.get("entries", []):
+            videos.append({
                 "title": entry.get("title"),
-                "video_id": entry.get("id"),
-                "thumbnail": entry.get("thumbnails", [{}])[-1].get("url")
-            }
-            for entry in results.get("entries", [])
-            if entry.get("id") and len(entry.get("id")) == 11
-        ]
+                "id": entry.get("id"),
+                "url": f"https://www.youtube.com/watch?v={entry.get('id')}",
+                "thumbnail": entry.get("thumbnail"),
+            })
 
-        return videos
+        return {"results": videos}
 
     except Exception as e:
         return {"error": str(e)}
-
-
-# 🎧 AUDIO API
-@app.get("/audio")
-def get_audio(video_id: str):
-
-    # 🔥 CACHE CHECK
-    if video_id in audio_cache:
-        return audio_cache[video_id]
-
-    url = f"https://www.youtube.com/watch?v={video_id}"
-
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "geo_bypass": True,
-
-        # ✅ SIMPLE FORMAT
-        "format": "bestaudio/best",
-
-        # 🔥 MULTI CLIENT TRY
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "ios", "web"]
-            }
-        },
-
-        # 🔥 HEADERS
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0"
-        }
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-
-        audio_url = info.get("url")
-
-        # 🔥 FALLBACK (formats)
-        if not audio_url:
-            formats = info.get("formats", [])
-
-            audio_formats = [
-                f for f in formats
-                if f.get("acodec") != "none" and f.get("url")
-            ]
-
-            audio_formats.sort(key=lambda x: x.get("abr", 0), reverse=True)
-
-            if audio_formats:
-                audio_url = audio_formats[0]["url"]
-
-        # ❌ STILL FAIL
-        if not audio_url:
-            return JSONResponse(
-                {"error": "No audio found"},
-                status_code=404
-            )
-
-        response = {
-            "title": info.get("title"),
-            "audio_url": audio_url,
-            "duration": info.get("duration"),
-            "thumbnail": info.get("thumbnail")
-        }
-
-        # 🔥 SAVE TO CACHE
-        audio_cache[video_id] = response
-
-        return response
-
-    except Exception as e:
-        error_msg = str(e)
-
-        # 🔥 HANDLE YOUTUBE BLOCK
-        if "Sign in to confirm you're not a bot" in error_msg:
-            return JSONResponse(
-                {
-                    "error": "YouTube blocked request",
-                    "solution": "Use local/ngrok backend"
-                },
-                status_code=500
-            )
-
-        return JSONResponse(
-            {"error": error_msg},
-            status_code=500
-        )
