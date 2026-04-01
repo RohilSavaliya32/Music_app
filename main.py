@@ -4,7 +4,7 @@ import yt_dlp
 
 app = FastAPI()
 
-# ✅ CORS (Flutter ke liye)
+# ✅ CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,9 +18,11 @@ def search(q: str):
     ydl_opts = {
         "quiet": True,
         "noplaylist": True,
-        "format": "bestaudio/best",
 
-        # 🔥 BOT BYPASS SETTINGS
+        # ❌ REMOVE THIS (main problem)
+        # "format": "bestaudio/best",
+
+        # ✅ BOT BYPASS
         "cookiefile": "cookies.txt",
         "nocheckcertificate": True,
         "geo_bypass": True,
@@ -39,13 +41,12 @@ def search(q: str):
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
 
-            # 🔥 Try 1: normal search
+            print(f"🔍 Searching: {q}")
+
             try:
-                print(f"🔍 Searching: {q}")
                 results = ydl.extract_info(f"ytsearch1:{q}", download=False)
-            except Exception as e:
-                print("⚠️ First search failed, trying fallback...")
-                # 🔁 fallback
+            except:
+                print("⚠️ fallback search...")
                 results = ydl.extract_info(f"ytsearch1:{q} official audio", download=False)
 
         entries = results.get("entries", [])
@@ -57,18 +58,23 @@ def search(q: str):
 
         print(f"✅ Found: {entry.get('title')}")
 
-        # 🎧 Audio URL extract
-        audio_url = entry.get("url")
+        # 🎧 BEST AUDIO SELECTOR 🔥
+        formats = entry.get("formats", [])
 
-        if not audio_url:
-            print("⚠️ Direct URL not found, checking formats...")
-            for f in entry.get("formats", []):
-                if f.get("acodec") != "none" and f.get("url"):
-                    audio_url = f.get("url")
-                    break
+        best_audio = None
+        best_bitrate = 0
 
-        if not audio_url:
-            return {"error": "Audio not found"}
+        for f in formats:
+            if f.get("acodec") != "none" and f.get("url"):
+                abr = f.get("abr") or 0
+                if abr > best_bitrate:
+                    best_bitrate = abr
+                    best_audio = f
+
+        if not best_audio:
+            return {"error": "No audio format found"}
+
+        audio_url = best_audio.get("url")
 
         youtube_url = f"https://youtu.be/{entry.get('id')}"
 
