@@ -4,7 +4,7 @@ import yt_dlp
 
 app = FastAPI()
 
-# CORS (Flutter ke liye)
+# ✅ CORS (Flutter ke liye)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,12 +18,35 @@ def search(q: str):
     ydl_opts = {
         "quiet": True,
         "noplaylist": True,
-        "format": "bestaudio/best"
+        "format": "bestaudio/best",
+
+        # 🔥 BOT BYPASS SETTINGS
+        "cookiefile": "cookies.txt",
+        "nocheckcertificate": True,
+        "geo_bypass": True,
+
+        "headers": {
+            "User-Agent": "Mozilla/5.0"
+        },
+
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web", "tv"]
+            }
+        }
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            results = ydl.extract_info(f"ytsearch1:{q} song", download=False)
+
+            # 🔥 Try 1: normal search
+            try:
+                print(f"🔍 Searching: {q}")
+                results = ydl.extract_info(f"ytsearch1:{q}", download=False)
+            except Exception as e:
+                print("⚠️ First search failed, trying fallback...")
+                # 🔁 fallback
+                results = ydl.extract_info(f"ytsearch1:{q} official audio", download=False)
 
         entries = results.get("entries", [])
 
@@ -32,13 +55,20 @@ def search(q: str):
 
         entry = entries[0]
 
+        print(f"✅ Found: {entry.get('title')}")
+
+        # 🎧 Audio URL extract
         audio_url = entry.get("url")
 
         if not audio_url:
+            print("⚠️ Direct URL not found, checking formats...")
             for f in entry.get("formats", []):
                 if f.get("acodec") != "none" and f.get("url"):
                     audio_url = f.get("url")
                     break
+
+        if not audio_url:
+            return {"error": "Audio not found"}
 
         youtube_url = f"https://youtu.be/{entry.get('id')}"
 
@@ -54,4 +84,5 @@ def search(q: str):
         }
 
     except Exception as e:
-        return {"error": str(e)}
+        print(f"❌ Error: {str(e)}")
+        return {"error": f"Failed: {str(e)}"}
