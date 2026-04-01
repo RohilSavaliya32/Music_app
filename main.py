@@ -12,34 +12,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def get_video_info(video_url):
-    ydl_opts = {
-        "quiet": True,
-        "skip_download": True,
-        "cookiefile": "cookies.txt",
-        "nocheckcertificate": True,
-        "geo_bypass": True,
-        "headers": {
-            "User-Agent": "Mozilla/5.0"
-        },
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android"]
-            }
-        }
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        return ydl.extract_info(video_url, download=False)
-
-
 @app.get("/search")
 def search(q: str):
     try:
-        # 🔥 STEP 1: ONLY SEARCH (NO FORMAT ISSUE)
+        # 🔥 STEP 1: SEARCH ONLY (NO FORMAT LOAD)
         with yt_dlp.YoutubeDL({
             "quiet": True,
-            "extract_flat": True
+            "extract_flat": "in_playlist"
         }) as ydl:
 
             print(f"🔍 Searching: {q}")
@@ -53,12 +32,33 @@ def search(q: str):
         video_id = entries[0].get("id")
         video_url = f"https://www.youtube.com/watch?v={video_id}"
 
-        print(f"🎯 Selected Video ID: {video_id}")
+        print(f"🎯 Video ID: {video_id}")
 
-        # 🔥 STEP 2: FETCH FULL DATA (SAFE)
-        info = get_video_info(video_url)
+        # 🔥 STEP 2: GET ONLY METADATA (NO FORMAT ERROR)
+        ydl_opts = {
+            "quiet": True,
+            "skip_download": True,   # 🔥 key fix
+            "extract_flat": False,
 
-        # 🎧 BEST AUDIO PICK
+            "cookiefile": "cookies.txt",
+            "nocheckcertificate": True,
+            "geo_bypass": True,
+
+            "headers": {
+                "User-Agent": "Mozilla/5.0"
+            },
+
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android"]
+                }
+            }
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+
+        # 🎧 AUDIO PICK (SAFE)
         formats = info.get("formats", [])
 
         best_audio = None
