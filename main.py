@@ -4,7 +4,6 @@ import yt_dlp
 
 app = FastAPI()
 
-# ✅ CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,11 +18,12 @@ def search(q: str):
         "quiet": True,
         "noplaylist": True,
 
-        # ❌ REMOVE THIS (main problem)
-        # "format": "bestaudio/best",
+        # 🔥 MOST IMPORTANT FIX
+        "skip_download": True,
 
-        # ✅ BOT BYPASS
+        # ✅ cookies
         "cookiefile": "cookies.txt",
+
         "nocheckcertificate": True,
         "geo_bypass": True,
 
@@ -58,7 +58,7 @@ def search(q: str):
 
         print(f"✅ Found: {entry.get('title')}")
 
-        # 🎧 BEST AUDIO SELECTOR 🔥
+        # 🎧 SAFE AUDIO PICKER
         formats = entry.get("formats", [])
 
         best_audio = None
@@ -76,16 +76,12 @@ def search(q: str):
 
         audio_url = best_audio.get("url")
 
-        youtube_url = f"https://youtu.be/{entry.get('id')}"
-
         return {
             "title": entry.get("title"),
             "video_id": entry.get("id"),
             "thumbnail": entry.get("thumbnail"),
             "channel": entry.get("uploader"),
-            "duration": entry.get("duration"),
-            "views": entry.get("view_count"),
-            "youtube_url": youtube_url,
+            "youtube_url": f"https://youtu.be/{entry.get('id')}",
             "audio_url": audio_url
         }
 
