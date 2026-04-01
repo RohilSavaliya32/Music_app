@@ -12,54 +12,54 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/search")
-def search(q: str):
+def get_video_info(video_url):
     ydl_opts = {
         "quiet": True,
-        "noplaylist": True,
-
-        # 🔥 MOST IMPORTANT FIX
         "skip_download": True,
-
-        # ✅ cookies
         "cookiefile": "cookies.txt",
-
         "nocheckcertificate": True,
         "geo_bypass": True,
-
         "headers": {
             "User-Agent": "Mozilla/5.0"
         },
-
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "web", "tv"]
+                "player_client": ["android"]
             }
         }
     }
 
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        return ydl.extract_info(video_url, download=False)
+
+
+@app.get("/search")
+def search(q: str):
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        # 🔥 STEP 1: ONLY SEARCH (NO FORMAT ISSUE)
+        with yt_dlp.YoutubeDL({
+            "quiet": True,
+            "extract_flat": True
+        }) as ydl:
 
             print(f"🔍 Searching: {q}")
-
-            try:
-                results = ydl.extract_info(f"ytsearch1:{q}", download=False)
-            except:
-                print("⚠️ fallback search...")
-                results = ydl.extract_info(f"ytsearch1:{q} official audio", download=False)
+            results = ydl.extract_info(f"ytsearch1:{q}", download=False)
 
         entries = results.get("entries", [])
 
         if not entries:
             return {"error": "No result found"}
 
-        entry = entries[0]
+        video_id = entries[0].get("id")
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
 
-        print(f"✅ Found: {entry.get('title')}")
+        print(f"🎯 Selected Video ID: {video_id}")
 
-        # 🎧 SAFE AUDIO PICKER
-        formats = entry.get("formats", [])
+        # 🔥 STEP 2: FETCH FULL DATA (SAFE)
+        info = get_video_info(video_url)
+
+        # 🎧 BEST AUDIO PICK
+        formats = info.get("formats", [])
 
         best_audio = None
         best_bitrate = 0
@@ -77,11 +77,11 @@ def search(q: str):
         audio_url = best_audio.get("url")
 
         return {
-            "title": entry.get("title"),
-            "video_id": entry.get("id"),
-            "thumbnail": entry.get("thumbnail"),
-            "channel": entry.get("uploader"),
-            "youtube_url": f"https://youtu.be/{entry.get('id')}",
+            "title": info.get("title"),
+            "video_id": video_id,
+            "thumbnail": info.get("thumbnail"),
+            "channel": info.get("uploader"),
+            "youtube_url": f"https://youtu.be/{video_id}",
             "audio_url": audio_url
         }
 
