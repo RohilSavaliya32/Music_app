@@ -1,90 +1,51 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-import yt_dlp
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# room storage
+rooms = {}
+hosts = {}
 
-@app.get("/search")
-def search(q: str):
+@app.websocket("/ws/{room_id}")
+async def websocket_endpoint(websocket: WebSocket, room_id: str):
+    await websocket.accept()
+
+    # create room if not exists
+    if room_id not in rooms:
+        rooms[room_id] = []
+        hosts[room_id] = websocket  # first user = host
+
+    rooms[room_id].append(websocket)
+
+    # send role
+    if websocket == hosts[room_id]:
+        await websocket.send_json({
+            "type": "role",
+            "role": "host"
+        })
+    else:
+        await websocket.send_json({
+            "type": "role",
+            "role": "viewer"
+        })
+
     try:
-        # 🔥 STEP 1: SEARCH ONLY (NO FORMAT LOAD)
-        with yt_dlp.YoutubeDL({
-            "quiet": True,
-            "extract_flat": "in_playlist"
-        }) as ydl:
+        while True:
+            data = await websocket.receive_json()
 
-            print(f"🔍 Searching: {q}")
-            results = ydl.extract_info(f"ytsearch1:{q}", download=False)
+            # only host can send control events
+            if websocket == hosts[room_id]:
+                for connection in rooms[room_id]:
+                    if connection != websocket:
+                        await connection.send_json(data)
 
-        entries = results.get("entries", [])
+    except WebSocketDisconnect:
+        rooms[room_id].remove(websocket)
 
-        if not entries:
-            return {"error": "No result found"}
-
-        video_id = entries[0].get("id")
-        video_url = f"https://www.youtube.com/watch?v={video_id}"
-
-        print(f"🎯 Video ID: {video_id}")
-
-        # 🔥 STEP 2: GET ONLY METADATA (NO FORMAT ERROR)
-        ydl_opts = {
-            "quiet": True,
-            "skip_download": True,   # 🔥 key fix
-            "extract_flat": False,
-
-            "cookiefile": "cookies.txt",
-            "nocheckcertificate": True,
-            "geo_bypass": True,
-
-            "headers": {
-                "User-Agent": "Mozilla/5.0"
-            },
-
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android"]
-                }
-            }
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-
-        # 🎧 AUDIO PICK (SAFE)
-        formats = info.get("formats", [])
-
-        best_audio = None
-        best_bitrate = 0
-
-        for f in formats:
-            if f.get("acodec") != "none" and f.get("url"):
-                abr = f.get("abr") or 0
-                if abr > best_bitrate:
-                    best_bitrate = abr
-                    best_audio = f
-
-        if not best_audio:
-            return {"error": "No audio format found"}
-
-        audio_url = best_audio.get("url")
-
-        return {
-            "title": info.get("title"),
-            "video_id": video_id,
-            "thumbnail": info.get("thumbnail"),
-            "channel": info.get("uploader"),
-            "youtube_url": f"https://youtu.be/{video_id}",
-            "audio_url": audio_url
-        }
-
-    except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        return {"error": f"Failed: {str(e)}"}
+        # if host leaves → assign new host
+        if websocket == hosts[room_id]:
+            if rooms[room_id]:
+                hosts[room_id] = rooms[room_id][0]
+            else:
+                del rooms[room_id]
+                del hosts[room_id]
